@@ -5,9 +5,14 @@
 #![allow(rustdoc::missing_crate_level_docs)] // it's an example
 
 extern crate serial;
+
+use std::fs;
+use std::fs::File;
 use std::io::prelude::*;
 use std::time::Duration;
 use serial::prelude::*;
+
+use csv::Writer;
 
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
@@ -31,7 +36,7 @@ fn main() -> eframe::Result<(), eframe::Error> {
 struct MyApp {
     port: String,
     serial: Option<SystemPort>,
-    data: Vec<[u32; 2]>
+    data: Vec<[f64; 2]>,
 }
 
 const SETTINGS: serial::PortSettings = serial::PortSettings {
@@ -44,6 +49,7 @@ const SETTINGS: serial::PortSettings = serial::PortSettings {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.request_repaint_after(Duration::from_millis(16));
         let mut plot_rect = None;
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("Serial port");
@@ -66,38 +72,55 @@ impl eframe::App for MyApp {
             if let Some(serial) = &mut self.serial {
                 let mut buf: Vec<u8> = (0..255).collect();
 
-                println!("reading bytes");
-                serial.read(&mut buf[..]).expect("Failed to read data");
-                //println!("Buf: {:?}", buf);
+                let len = serial.read(&mut buf[..]).unwrap_or_default();
+                //println!("Buf: {:?}", &buf[0..len]);
 
-                let s = match std::str::from_utf8(buf.as_slice()) {
-                    Ok(s) => s,
-                    Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-                };
+                let s = std::str::from_utf8(&buf[0..len]).unwrap_or_else(|e| {
+                    println!("Invalid UTF-8 sequence: {}", e);
+                    ""
+                });
 
-                println!("String: {}", s);
+                if s != "" {
+                    let mut data: Vec<&str> = s.split("\n").collect();
 
-                let data = s.split("\n");
 
-                for datum in data {
-                    let mut values = datum.split(",");
-                    println!("Values: {:?}", values);
-                    self.data.push([values.nth(0).unwrap().parse().unwrap(), values.nth(1).unwrap().parse().unwrap()]);
+                    for (x, datum) in data.iter().enumerate() {
+                        if x == 0 || x >= data.len() - 1 {
+                            continue;
+                        }
+                        let mut values: Vec<&str> = datum.split(",").collect();
+                        if values.len() != 2 {
+                            continue;
+                        }
+                        println!("Values: {:?}", values);
+                        //self.data.push([vaLues.nth(0).unwrap().parse().unwrap(), values.nth(1).unwrap().parse().unwrap()]);
+                        let pos = values[0].trim().parse();
+                        let val = values[1].trim().parse();
+
+                        if (pos.is_ok() && val.is_ok()) {
+                            self.data.push([pos.unwrap(), val.unwrap()]);
+                        }
+
+                    }
                 }
-
             }
 
 
-            if ui.button("Save Plot").clicked() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            if ui.button("Save CSV").clicked() {
+                let mut wtr = Writer::from_path("C:\\Users\\a0488091\\Documents\\data.csv").unwrap();
+
+                for data in &self.data {
+                    wtr.write_record(&[data[0].to_string(), data[1].to_string()]);
+                }
+
             }
 
             let my_plot = Plot::new("My Plot").legend(Legend::default());
 
             // let's create a dummy line in the plot
-            let graph: Vec<[f64; 2]> = vec![[0.0, 1.0], [2.0, 3.0], [3.0, 2.0]];
+            //let graph: Vec<[f64; 2]> = vec![[0.0, 1.0], [2.0, 3.0], [3.0, 2.0]];
             let inner = my_plot.show(ui, |plot_ui| {
-                plot_ui.line(Line::new(PlotPoints::from(graph)).name("curve"));
+                plot_ui.line(Line::new(PlotPoints::from(self.data.clone())).name("curve"));
             });
             // Remember the position of the plot
             plot_rect = Some(inner.response.rect);
@@ -134,5 +157,6 @@ impl eframe::App for MyApp {
                 eprintln!("Image saved to {path:?}.");
             }
         }
+        //ctx.request_repaint();
     }
 }

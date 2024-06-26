@@ -31,6 +31,7 @@ fn main() -> eframe::Result<(), eframe::Error> {
 struct MyApp {
     port: String,
     serial: Option<SystemPort>,
+    data: Vec<[u32; 2]>
 }
 
 const SETTINGS: serial::PortSettings = serial::PortSettings {
@@ -67,7 +68,23 @@ impl eframe::App for MyApp {
 
                 println!("reading bytes");
                 serial.read(&mut buf[..]).expect("Failed to read data");
-                println!("Buf: {:?}", buf);
+                //println!("Buf: {:?}", buf);
+
+                let s = match std::str::from_utf8(buf.as_slice()) {
+                    Ok(s) => s,
+                    Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+                };
+
+                println!("String: {}", s);
+
+                let data = s.split("\n");
+
+                for datum in data {
+                    let mut values = datum.split(",");
+                    println!("Values: {:?}", values);
+                    self.data.push([values.nth(0).unwrap().parse().unwrap(), values.nth(1).unwrap().parse().unwrap()]);
+                }
+
             }
 
 
